@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}IoT 设备注册管理{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="{{ url_for('dashboard') }}">🌱 IoT 设备管理</a>
+  <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="active"{% endif %}>仪表盘</a>
+  <a href="{{ url_for('device_list') }}" {% if request.endpoint in ('device_list', 'device_detail', 'device_assign') %}class="active"{% endif %}>设备列表</a>
+</nav>
+
+<main>
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

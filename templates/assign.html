@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}分配设备 {{ device.device_id }} – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>分配 / 编辑设备</h1>
+
+<div class="card" style="margin-bottom:.75rem">
+  <div class="detail-grid">
+    <div class="detail-row">
+      <span class="key">Chip ID</span>
+      <span class="val"><code>{{ device.chip_id }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Device ID</span>
+      <span class="val"><code>{{ device.device_id }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">产品类型</span>
+      <span class="val">{{ device.product_type or '—' }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>配置信息</h2>
+  <form method="POST" action="{{ url_for('device_assign', device_id=device.device_id) }}">
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="region_id">区域 ID</label>
+        <input type="text" id="region_id" name="region_id"
+               value="{{ device.region_id or '' }}" placeholder="例：greenhouse_a">
+      </div>
+
+      <div class="form-group">
+        <label for="mqtt_broker">MQTT Broker 地址</label>
+        <input type="text" id="mqtt_broker" name="mqtt_broker"
+               value="{{ device.mqtt_broker or default_broker }}">
+      </div>
+
+      <div class="form-group">
+        <label for="mqtt_port">MQTT Port</label>
+        <input type="number" id="mqtt_port" name="mqtt_port"
+               value="{{ device.mqtt_port or default_port }}" min="1" max="65535">
+      </div>
+
+      <div class="form-group">
+        <label for="assigned_by">分配者</label>
+        <input type="text" id="assigned_by" name="assigned_by"
+               value="{{ device.assigned_by or '' }}" placeholder="例：admin">
+      </div>
+
+      <div class="form-group">
+        <label for="co2_id">CO₂ 传感器 ID</label>
+        <input type="text" id="co2_id" name="co2_id"
+               value="{{ (device.sensor_ids or {}).get('co2_id', '') }}" placeholder="例：co2_001">
+      </div>
+
+      <div class="form-group">
+        <label for="light_id">光照传感器 ID</label>
+        <input type="text" id="light_id" name="light_id"
+               value="{{ (device.sensor_ids or {}).get('light_id', '') }}" placeholder="例：light_001">
+      </div>
+
+      <div class="form-group">
+        <label for="air_temp_id">空气温度传感器 ID</label>
+        <input type="text" id="air_temp_id" name="air_temp_id"
+               value="{{ (device.sensor_ids or {}).get('air_temp_id', '') }}" placeholder="例：temp_001">
+      </div>
+
+      <div class="form-group">
+        <label for="air_humidity_id">空气湿度传感器 ID</label>
+        <input type="text" id="air_humidity_id" name="air_humidity_id"
+               value="{{ (device.sensor_ids or {}).get('air_humidity_id', '') }}" placeholder="例：hum_001">
+      </div>
+    </div>
+
+    <div class="checkbox-row" style="margin-top:1.25rem">
+      <input type="checkbox" id="reset_password" name="reset_password">
+      <label for="reset_password">重置 MQTT 密码（提交后生成新密码）</label>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-success">保存并激活</button>
+      <a href="{{ url_for('device_detail', device_id=device.device_id) }}" class="btn btn-outline">取消</a>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

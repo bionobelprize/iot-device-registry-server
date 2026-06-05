@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}设备列表 – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>设备列表</h1>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Chip ID</th>
+          <th>Device ID</th>
+          <th>状态</th>
+          <th>区域</th>
+          <th>产品类型</th>
+          <th>注册时间</th>
+          <th>最后在线</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr>
+          <td><code>{{ d.chip_id }}</code></td>
+          <td><code>{{ d.device_id }}</code></td>
+          <td>
+            {% if d.status == 'active' %}
+              <span class="badge badge-active">已激活</span>
+            {% elif d.status == 'pending' %}
+              <span class="badge badge-pending">待分配</span>
+            {% else %}
+              <span class="badge badge-disabled">已禁用</span>
+            {% endif %}
+          </td>
+          <td>{{ d.region_id or '—' }}</td>
+          <td>{{ d.product_type or '—' }}</td>
+          <td>{{ d.registered_at.strftime('%Y-%m-%d %H:%M') if d.registered_at else '—' }}</td>
+          <td>{{ d.last_seen.strftime('%Y-%m-%d %H:%M') if d.last_seen else '—' }}</td>
+          <td style="white-space:nowrap">
+            <a href="{{ url_for('device_detail', device_id=d.device_id) }}" class="btn btn-outline btn-sm">详情</a>
+            <a href="{{ url_for('device_assign', device_id=d.device_id) }}" class="btn btn-primary btn-sm">分配/编辑</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" style="text-align:center; color:var(--muted); padding:2rem;">暂无设备</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
