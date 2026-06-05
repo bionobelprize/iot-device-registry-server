@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}设备详情 {{ device.device_id }} – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>
+  设备详情
+  {% if device.status == 'active' %}
+    <span class="badge badge-active" style="font-size:.9rem;vertical-align:middle">已激活</span>
+  {% elif device.status == 'pending' %}
+    <span class="badge badge-pending" style="font-size:.9rem;vertical-align:middle">待分配</span>
+  {% else %}
+    <span class="badge badge-disabled" style="font-size:.9rem;vertical-align:middle">已禁用</span>
+  {% endif %}
+</h1>
+
+<!-- Identity -->
+<div class="card">
+  <h2>基本信息</h2>
+  <div class="detail-grid">
+    <div class="detail-row">
+      <span class="key">Device ID</span>
+      <span class="val"><code>{{ device.device_id }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Chip ID</span>
+      <span class="val"><code>{{ device.chip_id }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">产品类型</span>
+      <span class="val">{{ device.product_type or '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">区域 ID</span>
+      <span class="val">{{ device.region_id or '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">注册时间</span>
+      <span class="val">{{ device.registered_at.strftime('%Y-%m-%d %H:%M:%S') if device.registered_at else '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">最后在线</span>
+      <span class="val">{{ device.last_seen.strftime('%Y-%m-%d %H:%M:%S') if device.last_seen else '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">分配者</span>
+      <span class="val">{{ device.assigned_by or '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">分配时间</span>
+      <span class="val">{{ device.assigned_at.strftime('%Y-%m-%d %H:%M:%S') if device.assigned_at else '—' }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- MQTT -->
+<div class="card">
+  <h2>MQTT 配置</h2>
+  <div class="detail-grid">
+    <div class="detail-row">
+      <span class="key">Broker</span>
+      <span class="val">{{ device.mqtt_broker or '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Port</span>
+      <span class="val">{{ device.mqtt_port or '—' }}</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Username</span>
+      <span class="val"><code>{{ device.device_id }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Password</span>
+      <span class="val"><code>{{ device.mqtt_password or '—' }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Telemetry Topic</span>
+      <span class="val"><code>agriculture/device/{{ device.device_id }}/telemetry</code></span>
+    </div>
+  </div>
+</div>
+
+<!-- Sensors -->
+<div class="card">
+  <h2>传感器 ID</h2>
+  {% set s = device.sensor_ids or {} %}
+  <div class="detail-grid">
+    <div class="detail-row">
+      <span class="key">CO₂ 传感器</span>
+      <span class="val"><code>{{ s.get('co2_id') or '—' }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">光照传感器</span>
+      <span class="val"><code>{{ s.get('light_id') or '—' }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">空气温度</span>
+      <span class="val"><code>{{ s.get('air_temp_id') or '—' }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">空气湿度</span>
+      <span class="val"><code>{{ s.get('air_humidity_id') or '—' }}</code></span>
+    </div>
+  </div>
+</div>
+
+<!-- Actions -->
+<div style="display:flex; gap:.75rem; flex-wrap:wrap">
+  <a href="{{ url_for('device_assign', device_id=device.device_id) }}" class="btn btn-primary">分配/编辑</a>
+
+  {% if device.status != 'disabled' %}
+  <form method="POST" action="{{ url_for('device_disable', device_id=device.device_id) }}"
+        onsubmit="return confirm('确认禁用该设备？')">
+    <button type="submit" class="btn btn-danger">禁用设备</button>
+  </form>
+  {% endif %}
+
+  <a href="{{ url_for('device_list') }}" class="btn btn-outline">← 返回列表</a>
+</div>
+{% endblock %}

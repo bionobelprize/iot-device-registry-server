@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} – IoT 设备管理{% endblock %}
+
+{% block content %}
+<div class="error-page">
+  <div class="code">{{ code }}</div>
+  <div class="msg">{{ message }}</div>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary">返回首页</a>
+</div>
+{% endblock %}
