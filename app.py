@@ -19,6 +19,9 @@ app.config["MONGO_URI"] = os.environ.get(
 DEFAULT_MQTT_BROKER = os.environ.get("DEFAULT_MQTT_BROKER", "47.104.248.242")
 DEFAULT_MQTT_PORT = int(os.environ.get("DEFAULT_MQTT_PORT", "1883"))
 
+DEVICE_ID_SUFFIX_LENGTH = 6   # characters after "dev_"
+DEFAULT_PASSWORD_LENGTH = 32   # bytes of hex entropy for MQTT passwords
+
 mongo = PyMongo(app)
 
 
@@ -37,13 +40,13 @@ def _generate_device_id():
     """Return a unique dev_XXXXXX identifier."""
     alphabet = string.ascii_lowercase + string.digits
     while True:
-        candidate = "dev_" + "".join(secrets.choice(alphabet) for _ in range(6))
+        candidate = "dev_" + "".join(secrets.choice(alphabet) for _ in range(DEVICE_ID_SUFFIX_LENGTH))
         if not mongo.db.devices.find_one({"device_id": candidate}):
             return candidate
 
 
-def _generate_password(length=32):
-    return secrets.token_hex(length // 2)
+def _generate_password():
+    return secrets.token_hex(DEFAULT_PASSWORD_LENGTH // 2)
 
 
 def _serialize_device(doc):
@@ -318,4 +321,6 @@ with app.app_context():
         app.logger.warning("Could not create indexes at startup: %s", exc)
 
 if __name__ == "__main__":
+    # NOTE: Flask's built-in server is for development only.
+    # For production use a WSGI server such as Gunicorn or uWSGI.
     app.run(host="0.0.0.0", port=8080, debug=False)
