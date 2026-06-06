@@ -209,6 +209,33 @@ tr:hover td { background: #f9fafb; }
 
 .btn-sm { padding: .3rem .75rem; font-size: .8rem; }
 
+/* ── Flash Messages ──────────────────────────────────────── */
+.flash-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+
+.flash {
+  border-radius: 8px;
+  padding: .65rem .9rem;
+  border: 1px solid transparent;
+  font-size: .9rem;
+}
+
+.flash-success {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.flash-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
 /* ── Forms ───────────────────────────────────────────────── */
 .form-grid {
   display: grid;
@@ -229,7 +256,9 @@ label {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select,
+textarea {
   padding: .55rem .75rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -243,6 +272,10 @@ input:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+}
+
+textarea {
+  resize: vertical;
 }
 
 .checkbox-row {
@@ -264,6 +297,29 @@ input:focus {
   display: flex;
   gap: .75rem;
   flex-wrap: wrap;
+}
+
+.inline-form {
+  display: flex;
+  gap: .45rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline-form input[type="number"] {
+  width: 90px;
+  min-width: 90px;
+}
+
+.attr-chip {
+  display: inline-block;
+  padding: .18rem .55rem;
+  margin: 0 .35rem .35rem 0;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  font-size: .78rem;
 }
 
 /* ── Detail Grid ─────────────────────────────────────────── */

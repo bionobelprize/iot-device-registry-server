@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}地址段配置 – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>地址段配置</h1>
+
+<div class="card">
+  <div class="detail-grid">
+    <div class="detail-row">
+      <span class="key">Device Class</span>
+      <span class="val"><code>{{ device_class }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">地址段</span>
+      <span class="val"><code>{{ target_range.start }} - {{ target_range.end }}</code></span>
+    </div>
+    <div class="detail-row">
+      <span class="key">可分配容量</span>
+      <span class="val"><code>{{ target_range.interval }}</code></span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>按槽位分配传感器</h2>
+  <p style="color:var(--muted); margin-bottom:1rem;">每个槽位对应一个设备实例；选择传感器后，属性将按传感器定义自动固化。</p>
+
+  <form method="POST" action="{{ url_for('subsensor_group_configure_save', device_class=device_class, range_id=target_range.range_id) }}">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>槽位</th>
+            <th>传感器</th>
+            <th>固定属性预览</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in slots %}
+          <tr>
+            <td><code>#{{ row.slot }}</code></td>
+            <td>
+              <select name="slot_{{ row.slot }}">
+                <option value="">未分配</option>
+                {% for s in sensor_profiles %}
+                  <option value="{{ s.sensor_key }}" {% if row.sensor_key == s.sensor_key %}selected{% endif %}>{{ s.brand }} / {{ s.sensor_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td>
+              {% if row.attributes %}
+                {% for attr in row.attributes %}
+                  <span class="attr-chip">{{ attr }}</span>
+                {% endfor %}
+              {% else %}
+                <span style="color:var(--muted)">保存后按选择写入</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存分配</button>
+      <a href="{{ url_for('sensor_profile_list') }}" class="btn btn-outline">维护传感器定义</a>
+      <a href="{{ url_for('subsensor_group_list') }}" class="btn btn-outline">返回地址表</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}传感器品牌与属性 – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>传感器品牌与属性定义</h1>
+
+<div class="card">
+  <h2>新增品牌</h2>
+  <form method="POST" action="{{ url_for('sensor_brand_add') }}" class="inline-form">
+    <input name="brand" type="text" placeholder="例如 acme" required>
+    <button type="submit" class="btn btn-primary btn-sm">新增品牌</button>
+  </form>
+
+  <div style="margin-top:1rem; display:flex; flex-wrap:wrap; gap:.5rem;">
+    {% for b in brands %}
+      <form method="POST" action="{{ url_for('sensor_brand_delete', brand=b.brand) }}" style="display:inline;"
+            onsubmit="return confirm('确认删除品牌 {{ b.brand }} ？若存在传感器定义将被拒绝。')">
+        <button type="submit" class="btn btn-outline btn-sm">{{ b.brand }} ×</button>
+      </form>
+    {% else %}
+      <span style="color:var(--muted)">暂无品牌</span>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>新增传感器定义</h2>
+  <form method="POST" action="{{ url_for('sensor_profile_add') }}" class="form-grid">
+    <div class="form-group">
+      <label for="brand">品牌</label>
+      <select id="brand" name="brand" required>
+        <option value="">请选择品牌</option>
+        {% for b in brands %}
+          <option value="{{ b.brand }}">{{ b.brand }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="sensor_name">传感器名称</label>
+      <input id="sensor_name" name="sensor_name" type="text" placeholder="例如 th300" required>
+    </div>
+    <div class="form-group" style="grid-column: 1 / -1;">
+      <label for="attributes">固定属性（逗号分隔）</label>
+      <textarea id="attributes" name="attributes" rows="3" placeholder="temperature, humidity" required></textarea>
+    </div>
+    <div class="form-actions" style="grid-column: 1 / -1; margin-top:.25rem;">
+      <button type="submit" class="btn btn-primary">新增传感器定义</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>已定义传感器</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>传感器</th>
+          <th>品牌</th>
+          <th>属性</th>
+          <th>删除</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sensor_profiles %}
+        <tr>
+          <td><code>{{ s.sensor_name }}</code></td>
+          <td><code>{{ s.brand }}</code></td>
+          <td>
+            {% for attr in s.attributes or [] %}
+              <span class="attr-chip">{{ attr }}</span>
+            {% else %}
+              <span style="color:var(--muted)">无属性</span>
+            {% endfor %}
+          </td>
+          <td>
+            <form method="POST" action="{{ url_for('sensor_profile_delete', sensor_key=s.sensor_key) }}"
+                  onsubmit="return confirm('确认删除该传感器定义？若已被地址段使用将被拒绝。')">
+              <button type="submit" class="btn btn-danger btn-sm">删除</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" style="text-align:center; color:var(--muted); padding:2rem;">暂无传感器定义</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

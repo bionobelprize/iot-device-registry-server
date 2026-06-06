@@ -12,9 +12,21 @@
   <a class="brand" href="{{ url_for('dashboard') }}">🌱 IoT 设备管理</a>
   <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="active"{% endif %}>仪表盘</a>
   <a href="{{ url_for('device_list') }}" {% if request.endpoint in ('device_list', 'device_detail', 'device_assign') %}class="active"{% endif %}>设备列表</a>
+  <a href="{{ url_for('sensor_profile_list') }}" {% if request.endpoint in ('sensor_profile_list', 'sensor_profile_add', 'sensor_profile_delete', 'sensor_brand_add', 'sensor_brand_delete') %}class="active"{% endif %}>传感器品牌与属性</a>
+  <a href="{{ url_for('subsensor_group_list') }}" {% if request.endpoint in ('subsensor_group_list', 'subsensor_group_add', 'subsensor_group_update', 'subsensor_group_delete_range', 'subsensor_group_delete_class', 'subsensor_group_configure', 'subsensor_group_configure_save') %}class="active"{% endif %}>子传感器分组地址</a>
 </nav>
 
 <main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-wrap">
+        {% for category, message in messages %}
+          <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
   {% block content %}{% endblock %}
 </main>
 

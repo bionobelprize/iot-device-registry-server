@@ -114,6 +114,11 @@
   </form>
   {% endif %}
 
+  <form method="POST" action="{{ url_for('device_delete', device_id=device.device_id) }}"
+        onsubmit="return confirm('确认删除该设备？删除后再次注册将重新创建设备记录。')">
+    <button type="submit" class="btn btn-danger">删除设备</button>
+  </form>
+
   <a href="{{ url_for('device_list') }}" class="btn btn-outline">← 返回列表</a>
 </div>
 {% endblock %}

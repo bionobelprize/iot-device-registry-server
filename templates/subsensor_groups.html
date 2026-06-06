@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}设备子传感器分组地址表 – IoT 设备管理{% endblock %}
+
+{% block content %}
+<h1>设备子传感器分组地址表</h1>
+
+<div class="card">
+  <h2>新增地址段</h2>
+  <form method="POST" action="{{ url_for('subsensor_group_add') }}" class="form-grid">
+    <div class="form-group">
+      <label for="device_class">Device Class</label>
+      <input id="device_class" name="device_class" type="text" placeholder="例如 soil_node_v2" required>
+    </div>
+    <div class="form-group">
+      <label for="start">Start</label>
+      <input id="start" name="start" type="number" min="0" required>
+    </div>
+    <div class="form-group">
+      <label for="end">End</label>
+      <input id="end" name="end" type="number" min="0" required>
+    </div>
+    <div class="form-group">
+      <label for="interval">Interval</label>
+      <input id="interval" name="interval" type="number" min="1" required>
+    </div>
+    <div class="form-actions" style="grid-column: 1 / -1; margin-top:.25rem;">
+      <button type="submit" class="btn btn-primary">新增地址段</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>当前地址表</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Device Class</th>
+          <th>地址段</th>
+          <th>容量/已分配</th>
+          <th>配置</th>
+          <th>编辑</th>
+          <th>删除</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in classes %}
+          {% set ranges = c.ranges or [] %}
+          {% for r in ranges %}
+          <tr>
+            <td><code>{{ c.device_class }}</code></td>
+            <td><code>{{ r.start }} - {{ r.end }}</code></td>
+            <td><code>{{ r.assignments|length }} / {{ r.interval }}</code></td>
+            <td>
+              <a href="{{ url_for('subsensor_group_configure', device_class=c.device_class, range_id=r.range_id) }}" class="btn btn-outline btn-sm">配置地址段</a>
+            </td>
+            <td>
+              <form method="POST" action="{{ url_for('subsensor_group_update', device_class=c.device_class, range_id=r.range_id) }}" class="inline-form">
+                <input name="start" type="number" min="0" value="{{ r.start }}" required>
+                <input name="end" type="number" min="0" value="{{ r.end }}" required>
+                <input name="interval" type="number" min="1" value="{{ r.interval }}" required>
+                <button type="submit" class="btn btn-primary btn-sm">保存</button>
+              </form>
+            </td>
+            <td>
+              <form method="POST" action="{{ url_for('subsensor_group_delete_range', device_class=c.device_class, range_id=r.range_id) }}"
+                    onsubmit="return confirm('确认删除该地址段？')">
+                <button type="submit" class="btn btn-danger btn-sm">删段</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td colspan="6" style="text-align:right; background:#fafafa;">
+              <form method="POST" action="{{ url_for('subsensor_group_delete_class', device_class=c.device_class) }}"
+                    onsubmit="return confirm('确认删除整个 device_class 及其全部地址段？')"
+                    style="display:inline;">
+                <button type="submit" class="btn btn-danger btn-sm">删除 {{ c.device_class }} 整个分组</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" style="text-align:center; color:var(--muted); padding:2rem;">暂无分组地址数据</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
