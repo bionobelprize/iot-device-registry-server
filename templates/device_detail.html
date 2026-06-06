@@ -79,27 +79,49 @@
   </div>
 </div>
 
-<!-- Sensors -->
+<!-- Entities -->
 <div class="card">
-  <h2>传感器 ID</h2>
-  {% set s = device.sensor_ids or {} %}
-  <div class="detail-grid">
-    <div class="detail-row">
-      <span class="key">CO₂ 传感器</span>
-      <span class="val"><code>{{ s.get('co2_id') or '—' }}</code></span>
-    </div>
-    <div class="detail-row">
-      <span class="key">光照传感器</span>
-      <span class="val"><code>{{ s.get('light_id') or '—' }}</code></span>
-    </div>
-    <div class="detail-row">
-      <span class="key">空气温度</span>
-      <span class="val"><code>{{ s.get('air_temp_id') or '—' }}</code></span>
-    </div>
-    <div class="detail-row">
-      <span class="key">空气湿度</span>
-      <span class="val"><code>{{ s.get('air_humidity_id') or '—' }}</code></span>
-    </div>
+  <h2>观测实体</h2>
+  {% set entities = device.entities or [] %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>实体编号</th>
+          <th>地址集合</th>
+          <th>传感器</th>
+          <th>观测属性</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entities %}
+        <tr>
+          <td><code>{{ e.entity_no }}</code></td>
+          <td><code>{{ (e.addresses or [])|join(', ') }}</code></td>
+          <td>
+            {% for s in e.sensors or [] %}
+              <div style="margin-bottom:.3rem"><code>{{ s.sensor_name }}</code> ({{ s.brand }})</div>
+            {% else %}
+              <span style="color:var(--muted)">—</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% for s in e.sensors or [] %}
+              {% for metric in s.metrics or [] %}
+                <span class="attr-chip">{{ metric }}</span>
+              {% endfor %}
+            {% else %}
+              <span style="color:var(--muted)">—</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" style="text-align:center; color:var(--muted); padding:1.25rem;">暂无实体映射信息</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 

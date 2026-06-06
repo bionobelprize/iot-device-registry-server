@@ -19,6 +19,7 @@ app.config["MONGO_URI"] = os.environ.get(
 
 DEFAULT_MQTT_BROKER = os.environ.get("DEFAULT_MQTT_BROKER", "47.104.248.242")
 DEFAULT_MQTT_PORT = int(os.environ.get("DEFAULT_MQTT_PORT", "1883"))
+DEVICE_ONLINE_TIMEOUT_SECONDS = int(os.environ.get("DEVICE_ONLINE_TIMEOUT_SECONDS", "300"))
 
 DEVICE_ID_SUFFIX_LENGTH = 6   # characters after "dev_"
 DEFAULT_PASSWORD_LENGTH = 32   # bytes of hex entropy for MQTT passwords
@@ -35,6 +36,7 @@ def _ensure_indexes():
     """Create unique indexes on chip_id and device_id."""
     mongo.db.devices.create_index("chip_id", unique=True)
     mongo.db.devices.create_index("device_id", unique=True)
+    mongo.db.devices.create_index("assignment_key", unique=True, sparse=True)
     mongo.db.device_subsensor_groups.create_index("device_class", unique=True)
     mongo.db.sensor_brands.create_index("brand", unique=True)
     mongo.db.sensor_profiles.create_index("sensor_key", unique=True)
@@ -115,6 +117,33 @@ def _parse_int_field(field_name, raw_value):
         raise ValueError(f"{field_name} must be an integer")
 
 
+def _parse_device_address(raw_value):
+    address = _parse_int_field("device_address", raw_value)
+    if address < 0:
+        raise ValueError("device_address must be >= 0")
+    return address
+
+
+def _parse_device_addresses(raw_value):
+    if isinstance(raw_value, list):
+        values = raw_value
+    else:
+        values = [raw_value]
+
+    addresses = []
+    for idx, item in enumerate(values, start=1):
+        try:
+            address = _parse_device_address(item)
+        except ValueError:
+            raise ValueError(f"device_address[{idx}] must be an integer >= 0")
+        addresses.append(address)
+
+    deduped = sorted(set(addresses))
+    if not deduped:
+        raise ValueError("device_address must contain at least one address")
+    return deduped
+
+
 def _validate_range_item(item, index_label=""):
     start = item.get("start")
     end = item.get("end")
@@ -183,6 +212,136 @@ def _build_sensor_key(brand, sensor_name):
     return f"{brand}:{sensor_name}"
 
 
+def _build_assignment_key(device_class, device_address):
+    return f"{device_class}:{device_address}"
+
+
+def _find_range_for_address(group, device_address):
+    for item in group.get("ranges", []):
+        start = item.get("start")
+        end = item.get("end")
+        interval = item.get("interval")
+        if start is None or end is None or interval is None:
+            continue
+        if start <= device_address <= end:
+            slot = ((device_address - start) % interval) + 1
+            assignment = None
+            for candidate in item.get("assignments", []):
+                if candidate.get("slot") == slot:
+                    assignment = candidate
+                    break
+            return item, slot, assignment
+    return None, None, None
+
+
+def _resolve_addresses(group, addresses):
+    resolved = []
+    for address in addresses:
+        target_range, slot, assignment = _find_range_for_address(group, address)
+        if not target_range:
+            raise ValueError(f"address {address} is not in allowed ranges")
+        if not assignment:
+            raise ValueError(f"address {address} slot is not assigned")
+
+        interval = target_range.get("interval", 0)
+        entity_no = (address + interval - 1) // interval
+        resolved.append(
+            {
+                "address": address,
+                "range_id": target_range.get("range_id", ""),
+                "range_start": target_range.get("start"),
+                "range_end": target_range.get("end"),
+                "interval": interval,
+                "slot": slot,
+                "entity_no": entity_no,
+                "assignment": {
+                    "sensor_key": assignment.get("sensor_key", ""),
+                    "brand": assignment.get("brand", ""),
+                    "sensor_name": assignment.get("sensor_name", ""),
+                    "attributes": list(assignment.get("attributes", [])),
+                },
+            }
+        )
+    return resolved
+
+
+def _build_entities(device_class, resolved_addresses):
+    entity_map = {}
+    for item in resolved_addresses:
+        entity_key = f"{item['range_id']}:{item['entity_no']}"
+        entity = entity_map.get(entity_key)
+        if entity is None:
+            entity = {
+                "entity_key": entity_key,
+                "device_class": device_class,
+                "entity_no": item["entity_no"],
+                "range_id": item["range_id"],
+                "range_start": item["range_start"],
+                "range_end": item["range_end"],
+                "interval": item["interval"],
+                "addresses": [],
+                "sensors": [],
+            }
+            entity_map[entity_key] = entity
+
+        assignment = item["assignment"]
+        metrics = [f"{assignment['sensor_name']}_{attr}" for attr in assignment.get("attributes", [])]
+        entity["addresses"].append(item["address"])
+        entity["sensors"].append(
+            {
+                "address": item["address"],
+                "slot": item["slot"],
+                "sensor_key": assignment.get("sensor_key", ""),
+                "brand": assignment.get("brand", ""),
+                "sensor_name": assignment.get("sensor_name", ""),
+                "attributes": assignment.get("attributes", []),
+                "metrics": metrics,
+            }
+        )
+
+    entities = []
+    for entity in entity_map.values():
+        entity["addresses"] = sorted(entity["addresses"])
+        entity["sensors"] = sorted(entity["sensors"], key=lambda x: x["address"])
+        entities.append(entity)
+
+    return sorted(entities, key=lambda x: (x["range_start"], x["entity_no"]))
+
+
+def _is_device_online(device):
+    last_seen = device.get("last_seen")
+    if not last_seen or device.get("status") != "active":
+        return False
+    now = datetime.now(timezone.utc)
+    return (now - last_seen).total_seconds() <= DEVICE_ONLINE_TIMEOUT_SECONDS
+
+
+def _build_device_config_payload(device):
+    sensor_assignment = device.get("sensor_assignment", {})
+    return {
+        "device_id": device["device_id"],
+        "device_class": device.get("product_type", ""),
+        "device_addresses": list(device.get("device_addresses", [])),
+        "range_id": device.get("range_id", ""),
+        "range_start": device.get("range_start"),
+        "range_end": device.get("range_end"),
+        "slot": device.get("slot"),
+        "mqtt_broker": device.get("mqtt_broker", DEFAULT_MQTT_BROKER),
+        "mqtt_port": device.get("mqtt_port", DEFAULT_MQTT_PORT),
+        "mqtt_username": device["device_id"],
+        "mqtt_password": device.get("mqtt_password", ""),
+        "telemetry_topic": f"agriculture/device/{device['device_id']}/telemetry",
+        "region_id": device.get("region_id", ""),
+        "sensor_assignment": {
+            "sensor_key": sensor_assignment.get("sensor_key", ""),
+            "brand": sensor_assignment.get("brand", ""),
+            "sensor_name": sensor_assignment.get("sensor_name", ""),
+            "attributes": list(sensor_assignment.get("attributes", [])),
+        },
+        "entities": list(device.get("entities", [])),
+    }
+
+
 def _find_group_and_range(device_class, range_id):
     normalized_class = _normalize_device_class(device_class)
     group = mongo.db.device_subsensor_groups.find_one({"device_class": normalized_class})
@@ -239,6 +398,7 @@ def api_register():
 
     chip_id = data.get("chip_id", "").strip()
     product_type = data.get("product_type", "").strip()
+    raw_device_address = data.get("device_address")
 
     if not chip_id:
         return jsonify({"error": "chip_id is required"}), 400
@@ -247,86 +407,107 @@ def api_register():
 
     try:
         product_type = _normalize_device_class(product_type)
+        device_addresses = _parse_device_addresses(raw_device_address)
     except ValueError:
-        return jsonify({"error": "invalid_product_type"}), 400
+        return jsonify({"error": "invalid_registration_payload"}), 400
 
     allowed_class = mongo.db.device_subsensor_groups.find_one({"device_class": product_type})
     if not allowed_class:
         return jsonify({"error": "unsupported_device_class"}), 403
 
+    try:
+        resolved = _resolve_addresses(allowed_class, device_addresses)
+    except ValueError as exc:
+        message = str(exc)
+        if "not in allowed ranges" in message:
+            return jsonify({"error": "device_address_not_allowed", "detail": message}), 403
+        if "not assigned" in message:
+            return jsonify({"error": "device_address_unassigned", "detail": message}), 403
+        return jsonify({"error": "invalid_registration_payload", "detail": message}), 400
+
+    entities = _build_entities(product_type, resolved)
+
     existing = mongo.db.devices.find_one({"chip_id": chip_id})
 
-    if existing:
-        existing_product_type = (existing.get("product_type") or "").strip()
+    now = datetime.now(timezone.utc)
+    primary = resolved[0]
+    assignment = primary["assignment"]
+    assignment_snapshot = {
+        "sensor_key": assignment.get("sensor_key", ""),
+        "brand": assignment.get("brand", ""),
+        "sensor_name": assignment.get("sensor_name", ""),
+        "attributes": list(assignment.get("attributes", [])),
+    }
+
+    target_device = existing
+
+    if target_device:
+        existing_product_type = (target_device.get("product_type") or "").strip()
         if existing_product_type and existing_product_type != product_type:
             return jsonify({"error": "device_class_mismatch"}), 403
 
-        status = existing.get("status", "pending")
-        if status == "active":
-            update_fields = {"last_seen": datetime.now(timezone.utc)}
-            if not existing_product_type:
-                update_fields["product_type"] = product_type
-
-            mongo.db.devices.update_one(
-                {"_id": existing["_id"]},
-                {"$set": update_fields},
-            )
-            sensor_ids = existing.get("sensor_ids", {})
-            device_id = existing["device_id"]
-            return jsonify(
-                {
-                    "device_id": device_id,
-                    "mqtt_broker": existing.get("mqtt_broker", DEFAULT_MQTT_BROKER),
-                    "mqtt_port": existing.get("mqtt_port", DEFAULT_MQTT_PORT),
-                    "mqtt_username": device_id,
-                    "mqtt_password": existing.get("mqtt_password", ""),
-                    "telemetry_topic": f"agriculture/device/{device_id}/telemetry",
-                    "region_id": existing.get("region_id", ""),
-                    "sensor_ids": {
-                        "co2_id": sensor_ids.get("co2_id", ""),
-                        "light_id": sensor_ids.get("light_id", ""),
-                        "air_temp_id": sensor_ids.get("air_temp_id", ""),
-                        "air_humidity_id": sensor_ids.get("air_humidity_id", ""),
-                    },
-                }
-            )
+        status = target_device.get("status", "active")
         if status == "disabled":
             return jsonify({"error": "device_disabled"}), 403
 
-        if not existing_product_type:
-            mongo.db.devices.update_one(
-                {"_id": existing["_id"]},
-                {"$set": {"product_type": product_type}},
-            )
-        # pending
-        return jsonify({"status": "pending_approval"})
+        update_fields = {
+            "chip_id": chip_id,
+            "product_type": product_type,
+            "device_address": primary["address"],
+            "device_addresses": device_addresses,
+            "range_id": primary.get("range_id", ""),
+            "range_start": primary.get("range_start"),
+            "range_end": primary.get("range_end"),
+            "slot": primary.get("slot"),
+            "sensor_assignment": assignment_snapshot,
+            "address_resolved": resolved,
+            "entities": entities,
+            "last_seen": now,
+            "status": "active",
+            "assigned_at": target_device.get("assigned_at") or now,
+        }
+
+        mongo.db.devices.update_one(
+            {"_id": target_device["_id"]},
+            {"$set": update_fields},
+        )
+        refreshed = mongo.db.devices.find_one({"_id": target_device["_id"]})
+        return jsonify(_build_device_config_payload(refreshed))
 
     # New device
     device_id = _generate_device_id()
-    now = datetime.now(timezone.utc)
     doc = {
         "chip_id": chip_id,
         "device_id": device_id,
-        "status": "pending",
+        "status": "active",
         "mqtt_password": _generate_password(),
         "mqtt_broker": DEFAULT_MQTT_BROKER,
         "mqtt_port": DEFAULT_MQTT_PORT,
         "region_id": "",
-        "sensor_ids": {
-            "co2_id": "",
-            "light_id": "",
-            "air_temp_id": "",
-            "air_humidity_id": "",
-        },
         "registered_at": now,
         "last_seen": now,
         "assigned_by": "",
-        "assigned_at": None,
+        "assigned_at": now,
         "product_type": product_type,
+        "device_address": primary["address"],
+        "device_addresses": device_addresses,
+        "range_id": primary.get("range_id", ""),
+        "range_start": primary.get("range_start"),
+        "range_end": primary.get("range_end"),
+        "slot": primary.get("slot"),
+        "sensor_assignment": assignment_snapshot,
+        "address_resolved": resolved,
+        "entities": entities,
     }
     mongo.db.devices.insert_one(doc)
-    app.logger.info("New device registered: chip_id=%s device_id=%s", chip_id, device_id)
-    return jsonify({"status": "pending_approval", "device_id": device_id}), 201
+    app.logger.info(
+        "New grouped host registered: chip_id=%s device_id=%s class=%s addresses=%s",
+        chip_id,
+        device_id,
+        product_type,
+        device_addresses,
+    )
+    return jsonify(_build_device_config_payload(doc)), 201
 
 
 # ---------------------------------------------------------------------------
@@ -342,24 +523,7 @@ def api_device_config(device_id):
     if device.get("status") != "active":
         return jsonify({"error": "device not active"}), 403
 
-    sensor_ids = device.get("sensor_ids", {})
-    return jsonify(
-        {
-            "device_id": device_id,
-            "mqtt_broker": device.get("mqtt_broker", DEFAULT_MQTT_BROKER),
-            "mqtt_port": device.get("mqtt_port", DEFAULT_MQTT_PORT),
-            "mqtt_username": device_id,
-            "mqtt_password": device.get("mqtt_password", ""),
-            "telemetry_topic": f"agriculture/device/{device_id}/telemetry",
-            "region_id": device.get("region_id", ""),
-            "sensor_ids": {
-                "co2_id": sensor_ids.get("co2_id", ""),
-                "light_id": sensor_ids.get("light_id", ""),
-                "air_temp_id": sensor_ids.get("air_temp_id", ""),
-                "air_humidity_id": sensor_ids.get("air_humidity_id", ""),
-            },
-        }
-    )
+    return jsonify(_build_device_config_payload(device))
 
 
 # ---------------------------------------------------------------------------
@@ -759,17 +923,10 @@ def device_assign(device_id):
 
     if request.method == "POST":
         reset_password = request.form.get("reset_password") == "on"
-        sensor_ids = {
-            "co2_id": request.form.get("co2_id", "").strip(),
-            "light_id": request.form.get("light_id", "").strip(),
-            "air_temp_id": request.form.get("air_temp_id", "").strip(),
-            "air_humidity_id": request.form.get("air_humidity_id", "").strip(),
-        }
         update_fields = {
             "region_id": request.form.get("region_id", "").strip(),
             "mqtt_broker": request.form.get("mqtt_broker", DEFAULT_MQTT_BROKER).strip(),
             "mqtt_port": int(request.form.get("mqtt_port", DEFAULT_MQTT_PORT)),
-            "sensor_ids": sensor_ids,
             "assigned_by": request.form.get("assigned_by", "").strip(),
             "assigned_at": datetime.now(timezone.utc),
             "status": "active",

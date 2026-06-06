@@ -16,10 +16,10 @@ For an ESP32 device with a 4G module, the expected workflow is:
 1. Power on and bring up the cellular data connection.
 2. Send an HTTP `POST` request to the server registration endpoint.
 3. Parse the JSON response.
-4. If the server returns `pending_approval`, wait and retry later.
-5. If the server returns full MQTT parameters, save them locally.
+4. The request must include `chip_id`, `product_type` (device class), and `device_address`.
+5. If the class and address are valid and the address slot is configured, the server returns full MQTT parameters immediately.
 6. Optionally call the config endpoint again after reboot or reconnect to refresh configuration.
-7. Use the returned MQTT broker, username, password, and telemetry topic to upload telemetry.
+7. Use the returned MQTT broker, username, password, telemetry topic, and fixed sensor assignment to upload telemetry.
 
 ## 2. Important distinction: HTTP server address vs MQTT broker address
 
@@ -90,7 +90,8 @@ Request body schema:
 ```json
 {
 	"chip_id": "string, required",
-	"product_type": "string, required"
+	"product_type": "string, required",
+	"device_address": "integer, required"
 }
 ```
 
@@ -98,6 +99,7 @@ Field meanings:
 
 - `chip_id`: unique hardware identifier of the device, required
 - `product_type`: device class / model type, required, and must exist in the backend "子传感器分组地址表" (`device_subsensor_groups.device_class`)
+- `device_address`: the actual subdevice address used to locate the matching range and slot in the address table
 
 ### 4.5 Recommended `chip_id` rules for ESP32
 
@@ -142,7 +144,7 @@ POST /api/register HTTP/1.1
 Host: 192.168.1.100:8080
 Content-Type: application/json
 
-{"chip_id":"24D7EB12AB34","product_type":"esp32_4g_soil_sensor"}
+{"chip_id":"24D7EB12AB34","product_type":"esp32_4g_soil_sensor","device_address":101}
 ```
 
 Equivalent JSON body only:
@@ -150,17 +152,18 @@ Equivalent JSON body only:
 ```json
 {
 	"chip_id": "24D7EB12AB34",
-	"product_type": "esp32_4g_soil_sensor"
+	"product_type": "esp32_4g_soil_sensor",
+	"device_address": 101
 }
 ```
 
 ## 5. Registration response details
 
-The same registration API can return different JSON structures depending on device status.
+The registration API authenticates the subdevice against the configured address table and returns MQTT allocation immediately after successful matching.
 
-### 5.1 First registration: waiting for approval
+### 5.1 Successful registration: MQTT config returned immediately
 
-When the server sees a new `chip_id`, it creates a record and returns:
+When the server sees a valid `chip_id` + `product_type` + `device_address` combination, and the address maps to a configured slot:
 
 HTTP status:
 
@@ -172,84 +175,55 @@ JSON body:
 
 ```json
 {
-	"status": "pending_approval",
-	"device_id": "dev_ab12cd"
-}
-```
-
-Meaning:
-
-- The device has been recorded by the server
-- The backend generated a permanent logical device ID such as `dev_ab12cd`
-- An administrator still needs to assign region/sensor info and activate the device
-- The device should not attempt MQTT telemetry yet unless your firmware explicitly allows a pending state
-
-### 5.2 Existing device still pending
-
-If the device was already created before, but an admin has not activated it yet:
-
-HTTP status:
-
-```text
-200 OK
-```
-
-JSON body:
-
-```json
-{
-	"status": "pending_approval"
-}
-```
-
-Meaning:
-
-- The device already exists on the server
-- It is still not active
-- Firmware should keep retrying after a delay
-
-### 5.3 Active device: registration succeeds and config is returned immediately
-
-If the device is already approved and active:
-
-HTTP status:
-
-```text
-200 OK
-```
-
-JSON body example:
-
-```json
-{
 	"device_id": "dev_ab12cd",
+	"device_class": "esp32_4g_soil_sensor",
+	"device_addresses": [101, 102, 103],
+	"range_id": "6841d4b7a2d0d9097c2d1234",
+	"range_start": 100,
+	"range_end": 108,
+	"slot": 2,
 	"mqtt_broker": "47.104.248.242",
 	"mqtt_port": 1883,
 	"mqtt_username": "dev_ab12cd",
 	"mqtt_password": "0123456789abcdef0123456789abcdef",
 	"telemetry_topic": "agriculture/device/dev_ab12cd/telemetry",
-	"region_id": "greenhouse_a",
-	"sensor_ids": {
-		"co2_id": "co2_001",
-		"light_id": "light_001",
-		"air_temp_id": "temp_001",
-		"air_humidity_id": "hum_001"
+	"region_id": "",
+	"sensor_assignment": {
+		"sensor_key": "acme:th300",
+		"brand": "acme",
+		"sensor_name": "th300",
+		"attributes": ["temperature", "humidity"]
+	},
+	"entities": [
+		{
+			"entity_no": 34,
+			"addresses": [101, 102, 103],
+			"sensors": [
+				{"address": 101, "sensor_name": "soil4", "metrics": ["soil4_temperature"]}
+			]
+		}
+	]
 	}
 }
 ```
 
-Meaning of each returned field:
+Meaning:
 
 - `device_id`: server-assigned logical ID, unique and stable
+- `device_class`: the authenticated device class
+- `device_addresses`: the incoming address list used for authentication and entity resolution
+- `range_id`, `range_start`, `range_end`: matched address segment metadata
+- `slot`: calculated slot inside the segment, based on the address and interval
 - `mqtt_broker`: MQTT server address to connect to
 - `mqtt_port`: MQTT TCP port
 - `mqtt_username`: currently the same value as `device_id`
 - `mqtt_password`: per-device MQTT password generated by the server
 - `telemetry_topic`: MQTT topic used by the device for telemetry uploads
 - `region_id`: management-side region identifier
-- `sensor_ids`: server-side identifiers bound to each sensor channel
+- `sensor_assignment`: the fixed sensor definition and attribute list for the matched slot
+- `entities`: grouped observation entities resolved from the address list
 
-### 5.4 Disabled device
+### 5.2 Disabled device
 
 If an admin disables the device:
 
@@ -269,7 +243,7 @@ JSON body:
 
 Firmware should treat this as a hard stop and avoid infinite rapid retries.
 
-### 5.5 Deleted device
+### 5.3 Deleted device
 
 If an admin deletes the device record from the management system, the server removes the MongoDB document entirely.
 
@@ -281,7 +255,7 @@ Effect:
 
 This is different from disabling: disabled devices stay in the database and still return `device_disabled`.
 
-### 5.6 Invalid request
+### 5.4 Invalid request
 
 If the body is not JSON:
 
@@ -311,15 +285,7 @@ If `product_type` is empty or invalid:
 
 ```json
 {
-	"error": "product_type is required"
-}
-```
-
-or:
-
-```json
-{
-	"error": "invalid_product_type"
+	"error": "invalid_registration_payload"
 }
 ```
 
@@ -335,6 +301,26 @@ If `product_type` is not in the sensor class list (`device_subsensor_groups`):
 }
 ```
 
+If `device_address` is outside all configured ranges for that class:
+
+```text
+403 Forbidden
+```
+
+```json
+{
+	"error": "device_address_not_allowed"
+}
+```
+
+If the matching slot in the address table has not been assigned a sensor yet:
+
+```json
+{
+	"error": "device_address_unassigned"
+}
+```
+
 If an existing device sends a different class from its recorded class:
 
 ```text
@@ -344,6 +330,26 @@ If an existing device sends a different class from its recorded class:
 ```json
 {
 	"error": "device_class_mismatch"
+}
+```
+
+If the same `chip_id` tries to authenticate with a different configured address:
+
+```json
+{
+	"error": "device_address_mismatch"
+}
+```
+
+If the target address is already occupied by another online device:
+
+```text
+409 Conflict
+```
+
+```json
+{
+	"error": "device_address_in_use"
 }
 ```
 
@@ -380,18 +386,15 @@ If the device exists and is active, the response body is the same structure as t
 ```json
 {
 	"device_id": "dev_ab12cd",
+	"device_class": "esp32_4g_soil_sensor",
+	"device_addresses": [101, 102, 103],
 	"mqtt_broker": "47.104.248.242",
 	"mqtt_port": 1883,
 	"mqtt_username": "dev_ab12cd",
 	"mqtt_password": "0123456789abcdef0123456789abcdef",
 	"telemetry_topic": "agriculture/device/dev_ab12cd/telemetry",
 	"region_id": "greenhouse_a",
-	"sensor_ids": {
-		"co2_id": "co2_001",
-		"light_id": "light_001",
-		"air_temp_id": "temp_001",
-		"air_humidity_id": "hum_001"
-	}
+	"entities": []
 }
 ```
 
@@ -433,10 +436,8 @@ On first registration, the backend creates these values internally:
 - `mqtt_broker`: default `47.104.248.242`
 - `mqtt_port`: default `1883`
 - `region_id`: initially empty string
-- `sensor_ids.co2_id`: initially empty string
-- `sensor_ids.light_id`: initially empty string
-- `sensor_ids.air_temp_id`: initially empty string
-- `sensor_ids.air_humidity_id`: initially empty string
+- `device_addresses`: normalized sorted address list reported by the host chip
+- `entities`: resolved entity groups and per-sensor metrics derived from address table
 - `registered_at`: server timestamp
 - `last_seen`: server timestamp
 - `assigned_by`: initially empty string
@@ -474,7 +475,7 @@ Recommended persistent fields:
 - last known `mqtt_password`
 - last known `telemetry_topic`
 - `region_id`
-- `sensor_ids`
+- `entities`
 
 ### 8.3 Recommended boot sequence
 
@@ -616,7 +617,7 @@ Expected active response example:
 HTTP/1.1 200 OK
 Content-Type: application/json
 
-{"device_id":"dev_ab12cd","mqtt_broker":"47.104.248.242","mqtt_port":1883,"mqtt_username":"dev_ab12cd","mqtt_password":"0123456789abcdef0123456789abcdef","telemetry_topic":"agriculture/device/dev_ab12cd/telemetry","region_id":"greenhouse_a","sensor_ids":{"co2_id":"co2_001","light_id":"light_001","air_temp_id":"temp_001","air_humidity_id":"hum_001"}}
+{"device_id":"dev_ab12cd","device_class":"esp32_4g_soil_sensor","device_addresses":[101,102,103],"mqtt_broker":"47.104.248.242","mqtt_port":1883,"mqtt_username":"dev_ab12cd","mqtt_password":"0123456789abcdef0123456789abcdef","telemetry_topic":"agriculture/device/dev_ab12cd/telemetry","region_id":"greenhouse_a","entities":[{"entity_no":34,"addresses":[101,102,103],"sensors":[{"address":101,"sensor_name":"soil4","metrics":["soil4_temperature"]}]}]}
 ```
 
 ## 11. Notes and current limitations

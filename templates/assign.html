@@ -18,11 +18,60 @@
       <span class="key">产品类型</span>
       <span class="val">{{ device.product_type or '—' }}</span>
     </div>
+    <div class="detail-row">
+      <span class="key">地址列表</span>
+      <span class="val"><code>{{ (device.device_addresses or [])|join(', ') if device.device_addresses else '—' }}</code></span>
+    </div>
   </div>
 </div>
 
 <div class="card">
-  <h2>配置信息</h2>
+  <h2>观测实体映射</h2>
+  {% set entities = device.entities or [] %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>实体编号</th>
+          <th>地址集合</th>
+          <th>传感器</th>
+          <th>观测属性</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entities %}
+        <tr>
+          <td><code>{{ e.entity_no }}</code></td>
+          <td><code>{{ (e.addresses or [])|join(', ') }}</code></td>
+          <td>
+            {% for s in e.sensors or [] %}
+              <div style="margin-bottom:.3rem"><code>{{ s.sensor_name }}</code> ({{ s.brand }})</div>
+            {% else %}
+              <span style="color:var(--muted)">—</span>
+            {% endfor %}
+          </td>
+          <td>
+            {% for s in e.sensors or [] %}
+              {% for metric in s.metrics or [] %}
+                <span class="attr-chip">{{ metric }}</span>
+              {% endfor %}
+            {% else %}
+              <span style="color:var(--muted)">—</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" style="text-align:center; color:var(--muted); padding:1.25rem;">当前未解析出实体，请检查 class 地址段配置。</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>平台配置</h2>
   <form method="POST" action="{{ url_for('device_assign', device_id=device.device_id) }}">
 
     <div class="form-grid">
@@ -48,30 +97,6 @@
         <label for="assigned_by">分配者</label>
         <input type="text" id="assigned_by" name="assigned_by"
                value="{{ device.assigned_by or '' }}" placeholder="例：admin">
-      </div>
-
-      <div class="form-group">
-        <label for="co2_id">CO₂ 传感器 ID</label>
-        <input type="text" id="co2_id" name="co2_id"
-               value="{{ (device.sensor_ids or {}).get('co2_id', '') }}" placeholder="例：co2_001">
-      </div>
-
-      <div class="form-group">
-        <label for="light_id">光照传感器 ID</label>
-        <input type="text" id="light_id" name="light_id"
-               value="{{ (device.sensor_ids or {}).get('light_id', '') }}" placeholder="例：light_001">
-      </div>
-
-      <div class="form-group">
-        <label for="air_temp_id">空气温度传感器 ID</label>
-        <input type="text" id="air_temp_id" name="air_temp_id"
-               value="{{ (device.sensor_ids or {}).get('air_temp_id', '') }}" placeholder="例：temp_001">
-      </div>
-
-      <div class="form-group">
-        <label for="air_humidity_id">空气湿度传感器 ID</label>
-        <input type="text" id="air_humidity_id" name="air_humidity_id"
-               value="{{ (device.sensor_ids or {}).get('air_humidity_id', '') }}" placeholder="例：hum_001">
       </div>
     </div>
 
